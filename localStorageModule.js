@@ -1,4 +1,3 @@
-
 /* Start angularLocalStorage */
 
 var angularLocalStorage = angular.module('LocalStorageModule', []);
@@ -12,13 +11,8 @@ angularLocalStorage.value('prefix', 'ls');
 angularLocalStorage.constant('cookie', { expiry:30, path: '/'});
 angularLocalStorage.constant('notify', { setItem: true, removeItem: false} );
 
-angularLocalStorage.service('localStorageService', [
-  '$rootScope',
-  'prefix',
-  'cookie',
-  'notify',
-  function($rootScope, prefix, cookie, notify) {
 
+var storageAdapter = function(storageType, $rootScope, prefix, cookie, notify) {
   // If there is a prefix set in the config lets use that with an appended period for readability
   //var prefix = angularLocalStorage.constant;
   if (prefix.substr(-1)!=='.') {
@@ -28,12 +22,24 @@ angularLocalStorage.service('localStorageService', [
   // Checks the browser to see if local storage is supported
   var browserSupportsLocalStorage = function () {
     try {
+      if (storageType == 'local') {
         return ('localStorage' in window && window['localStorage'] !== null);
+      } else if (storageType == 'session') {
+        return ('sessionStorage' in window && window['sessionStorage'] !== null);
+      } else {
+        throw "Bad storage type passed";
+      }
     } catch (e) {
         $rootScope.$broadcast('LocalStorageModule.notification.error',e.message);
         return false;
     }
+
   };
+
+  var localStorage = null;
+  if (browserSupportsLocalStorage()) {
+    localStorage = storageType == "local" ? window.localStorage : window.sessionStorage;
+  }
 
   // Directly adds a value to local storage
   // If local storage is not available in the browser use cookies
@@ -58,7 +64,7 @@ angularLocalStorage.service('localStorageService', [
       }
       localStorage.setItem(prefix+key, value);
       if (notify.setItem) {
-        $rootScope.$broadcast('LocalStorageModule.notification.setitem', {key: key, newvalue: value, storageType: 'localStorage'});
+        $rootScope.$broadcast('LocalStorageModule.notification.setitem', {key: key, newvalue: value, storageType: storageType + 'Storage'});
       }
     } catch (e) {
       $rootScope.$broadcast('LocalStorageModule.notification.error',e.message);
@@ -188,11 +194,13 @@ angularLocalStorage.service('localStorageService', [
         value = '';
       }
       if (cookie.expiry !== 0) {
-        expiryDate.setTime(expiryDate.getTime() + (cookie.expiry*24*60*60*1000));
-        expiry = "; expires="+expiryDate.toGMTString();
+        if (expiry == -1 || storageType == 'local') {
+          expiryDate.setTime(expiryDate.getTime() + (cookie.expiry*24*60*60*1000));
+          expiry = "; expires="+expiryDate.toGMTString();
+        }
       }
       if (!!key) {
-        document.cookie = prefix + key + "=" + encodeURIComponent(value) + expiry + "; path="+cookie.path;
+        document.cookie = prefix + key + "=" + encodeURIComponent(angular.toJson(value)) + expiry + "; path="+cookie.path;
       }
     } catch (e) {
       $rootScope.$broadcast('LocalStorageModule.notification.error',e.message);
@@ -216,7 +224,7 @@ angularLocalStorage.service('localStorageService', [
         thisCookie = thisCookie.substring(1,thisCookie.length);
       }
       if (thisCookie.indexOf(prefix+key+'=') === 0) {
-        return decodeURIComponent(thisCookie.substring(prefix.length+key.length+1,thisCookie.length));
+        return angular.fromJson(decodeURIComponent(thisCookie.substring(prefix.length+key.length+1,thisCookie.length)));
       }
     }
     return null;
@@ -256,5 +264,23 @@ angularLocalStorage.service('localStorageService', [
       clearAll: clearAllFromCookies
     }
   };
+};
 
+
+angularLocalStorage.service('localStorageService', [
+  '$rootScope',
+  'prefix',
+  'cookie',
+  'notify',
+  function($rootScope, prefix, cookie, notify) {
+    return storageAdapter('local', $rootScope, prefix, cookie, notify);
+}]);
+
+angularLocalStorage.service('sessionStorageService', [
+  '$rootScope',
+  'prefix',
+  'cookie',
+  'notify',
+  function($rootScope, prefix, cookie, notify) {
+    return storageAdapter('session', $rootScope, prefix, cookie, notify);
 }]);
